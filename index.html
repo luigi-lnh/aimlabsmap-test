@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Aimlab-style Practice Room (Three.js)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body { height:100%; margin:0; }
+    canvas { display:block; }
+    /* slight vignette UI text similar to the image (optional) */
+    .center-text {
+      position:absolute;
+      left:50%; top:50%;
+      transform:translate(-50%,-50%);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: rgba(255,255,255,0.95);
+      font-weight:700;
+      letter-spacing:0.12em;
+      pointer-events:none;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <div class="center-text" style="font-size:20px; display:none;">CLICK TO BEGIN</div>
+
+  <!-- THREE.js and OrbitControls from CDN -->
+  <script src="https://unpkg.com/three@0.154.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.154.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+  // Scene setup
+  const container = document.getElementById('container');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x939598); // subtle neutral
+
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  // Camera
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
+  camera.position.set(0, 2.4, 6.2);
+
+  // Controls - allow rotation only (no pan, no zoom)
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enablePan = false;
+  controls.enableZoom = false;
+  controls.minDistance = controls.maxDistance = undefined; // not used since zoom disabled
+  controls.target.set(0, 1.6, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI * 0.95; // allow looking almost straight up
+  controls.minPolarAngle = Math.PI * 0.02; // allow looking almost straight down
+
+  // Lights
+  const hemi = new THREE.HemisphereLight(0xdfe9ff, 0x444444, 0.6);
+  scene.add(hemi);
+
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(-5, 8, 5);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(2048, 2048);
+  dir.shadow.camera.left = -8;
+  dir.shadow.camera.right = 8;
+  dir.shadow.camera.top = 8;
+  dir.shadow.camera.bottom = -8;
+  dir.shadow.camera.near = 1;
+  dir.shadow.camera.far = 30;
+  scene.add(dir);
+
+  // Soft ambient fill light
+  const fill = new THREE.PointLight(0xffffff, 0.15);
+  fill.position.set(4, 3, -4);
+  scene.add(fill);
+
+  // --- Reusable checkerboard texture (canvas) ---
+  function makeCheckerTexture(squareCountX = 8, squareCountY = 8, size = 512, c1 = '#9a9a9a', c2 = '#6f6f6f') {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.height = size;
+    const sx = size / squareCountX;
+    const sy = size / squareCountY;
+    ctx.fillStyle = c1;
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = c2;
+    for (let y = 0; y < squareCountY; y++) {
+      for (let x = (y % 2 === 0 ? 1 : 0); x < squareCountX; x += 2) {
+        ctx.fillRect(x * sx, y * sy, sx, sy);
+      }
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+
+  // Materials
+  const floorTex = makeCheckerTexture(12, 12, 1024, '#d7d7d7', '#bfbfbf');
+  floorTex.repeat.set(6, 6);
+  const wallTex = makeCheckerTexture(8, 8, 1024, '#bdbdbd', '#9f9f9f');
+  wallTex.repeat.set(6, 3);
+
+  const floorMat = new THREE.MeshStandardMaterial({
+    map: floorTex,
+    roughness: 0.9,
+    metalness: 0.02
+  });
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: wallTex,
+    roughness: 0.95,
+    metalness: 0.0
+  });
+
+  // --- Room geometry (large box opened from front) ---
+  const roomDepth = 12;
+  const roomWidth = 12;
+  const roomHeight = 6;
+
+  // Floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = 0;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Back wall
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomHeight), wallMat);
+  back.position.z = -roomDepth/2 + 0.01;
+  back.position.y = roomHeight/2;
+  back.receiveShadow = true;
+  scene.add(back);
+
+  // Left wall
+  const left = new THREE.Mesh(new THREE.PlaneGeometry(roomDepth, roomHeight), wallMat);
+  left.rotation.y = Math.PI/2;
+  left.position.x = -roomWidth/2 + 0.01;
+  left.position.y = roomHeight/2;
+  left.receiveShadow = true;
+  scene.add(left);
+
+  // Right wall
+  const right = new THREE.Mesh(new THREE.PlaneGeometry(roomDepth, roomHeight), wallMat);
+  right.rotation.y = -Math.PI/2;
+  right.position.x = roomWidth/2 - 0.01;
+  right.position.y = roomHeight/2;
+  right.receiveShadow = true;
+  scene.add(right);
+
+  // Ceiling
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), wallMat);
+  ceiling.rotation.x = Math.PI/2;
+  ceiling.position.y = roomHeight + 0.01;
+  ceiling.receiveShadow = false;
+  scene.add(ceiling);
+
+  // --- Mid-wall wide ledge/shelf (big recessed platform across the back) ---
+  const ledgeDepth = 1.5;
+  const ledgeHeight = 1.4;
+  const ledgeWidth = roomWidth * 0.9;
+  const ledgeGeo = new THREE.BoxGeometry(ledgeWidth, 0.9, ledgeDepth);
+  const ledge = new THREE.Mesh(ledgeGeo, new THREE.MeshStandardMaterial({
+    color: 0x666666,
+    roughness: 0.95
+  }));
+  ledge.position.set(0, ledgeHeight, -roomDepth/2 + ledgeDepth/2 + 0.05);
+  ledge.receiveShadow = true;
+  ledge.castShadow = false;
+  scene.add(ledge);
+
+  // Put a thin front lip (darker)
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(ledgeWidth, 0.35, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x4f4f4f, roughness: 0.96 }));
+  lip.position.set(0, ledgeHeight - 0.3, -roomDepth/2 + ledgeDepth - 0.05);
+  lip.receiveShadow = true;
+  scene.add(lip);
+
+  // --- Raised blocks on the right (stacked) ---
+  const blockMaterial = new THREE.MeshStandardMaterial({ color: 0x7a7a7a, roughness: 0.96 });
+  const block1 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.8, 1.2), blockMaterial);
+  block1.position.set((roomWidth/2) - 2.2, 0.4, -roomDepth/2 + 2.2);
+  block1.castShadow = true;
+  block1.receiveShadow = true;
+  scene.add(block1);
+
+  const block2 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.9, 1.0), blockMaterial);
+  block2.position.set((roomWidth/2) - 1.1, 0.9 + 0.05, -roomDepth/2 + 1.8);
+  block2.castShadow = true;
+  block2.receiveShadow = true;
+  scene.add(block2);
+
+  // Slight bevel-ish block behind left side (simulate the stepped shapes in screenshot)
+  const bigStep = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.0, 0.9), new THREE.MeshStandardMaterial({
+    color: 0x6d6d6d, roughness: 0.98
+  }));
+  bigStep.position.set(-1.9, 1.1, -roomDepth/2 + 1.9);
+  bigStep.castShadow = true;
+  bigStep.receiveShadow = true;
+  scene.add(bigStep);
+
+  // subtle contact shadow plane under ledge/blocks (multiply textured dark ellipse)
+  const shadowCanvas = document.createElement('canvas');
+  shadowCanvas.width = shadowCanvas.height = 512;
+  const sc = shadowCanvas.getContext('2d');
+  const grad = sc.createRadialGradient(256,256,0,256,256,256);
+  grad.addColorStop(0, 'rgba(0,0,0,0.45)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.0)');
+  sc.fillStyle = grad;
+  sc.fillRect(0,0,512,512);
+  const contactTex = new THREE.CanvasTexture(shadowCanvas);
+  contactTex.wrapS = contactTex.wrapT = THREE.ClampToEdgeWrapping;
+  const contactMat = new THREE.MeshBasicMaterial({ map: contactTex, transparent: true, depthWrite: false });
+
+  const contact1 = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.6), contactMat);
+  contact1.rotation.x = -Math.PI/2;
+  contact1.position.set(0, 0.01, -roomDepth/2 + 2.1);
+  scene.add(contact1);
+
+  // Optional: a low-sitting occlusion plane along the front of the ledge for better visual separation
+  const frontOccl = new THREE.Mesh(new THREE.PlaneGeometry(ledgeWidth*0.98, 0.22), new THREE.MeshStandardMaterial({
+    color: 0x1a1a1a, roughness: 1, metalness:0
+  }));
+  frontOccl.rotation.x = -Math.PI/2;
+  frontOccl.position.set(0, 0.03, -roomDepth/2 + 1.0);
+  frontOccl.receiveShadow = true;
+  frontOccl.material.opacity = 0.08;
+  frontOccl.material.transparent = true;
+  scene.add(frontOccl);
+
+  // Small design lights (soft light strips) - subtle to add depth near ceiling corners
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(roomWidth*0.6, 0.03, 0.04), new THREE.MeshStandardMaterial({
+    color: 0xdadfe6, roughness: 0.8, emissive: 0x222630, emissiveIntensity: 0.02
+  }));
+  strip.position.set(0, roomHeight - 0.12, -roomDepth/2 + 0.05);
+  scene.add(strip);
+
+  // Performance: limit pixel ratio when low memory
+  function updatePixelRatio() {
+    const dpr = window.devicePixelRatio || 1;
+    renderer.setPixelRatio(Math.min(dpr, 2));
+  }
+  updatePixelRatio();
+
+  // Handle resize
+  window.addEventListener('resize', onWindowResize, false);
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    updatePixelRatio();
+  }
+
+  // Animation loop
+  const clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Helpful debug: press "H" to toggle helpers (for tweaking)
+  let helpersOn = false;
+  const dirHelper = new THREE.DirectionalLightHelper(dir, 0.6);
+  const camHelper = new THREE.CameraHelper(dir.shadow.camera);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'h') {
+      helpersOn = !helpersOn;
+      if (helpersOn) {
+        scene.add(dirHelper);
+        scene.add(camHelper);
+      } else {
+        scene.remove(dirHelper);
+        scene.remove(camHelper);
+      }
+    }
+  });
+
+  // Prevent zoom with wheel, but allow rotation by mouse drag
+  renderer.domElement.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+
+  </script>
+</body>
+</html>
